@@ -1,0 +1,574 @@
+---
+title: "01 Lectura e tratamento de series temporais en R"
+author: "Servizo de modelización"
+date: "2025-06-23"
+output:
+  html_document: default
+  pdf_document: default
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+## Series de conxuntura na web do IGE
+
+Dende a páxina web do IGE, navégase:
+
+web IGE \> Datos \> Temas transversais \> Banco de series de conxuntura
+
+A web contén unha base de series, agrupadas en seccións, grupos e
+subgrupos. No botón de "listado de series disponibles" amósanse todas as
+series.
+
+Para escoller as series, vanse seleccionando navegando por seccións,
+grupos e subgrupos. Dándolle ao botón despregar/pregar todo , poden
+verse todas. Unha vez seleccionada unha serie, aparece na parte inferior
+a súa definición, fontes e unidades.
+
+Poden seleccionarse varias series pero non se poden mezclar series de
+diferente periodicidade. Se lle da Continuar permite ver a táboa ou a
+gráfica, facer algun filtrado e obter variacións.
+
+Ademais permite obter a url de descarga (que nos permitiría descargar os
+datos, por exemplo dende R)
+
+### Descarga dunha serie
+
+Coas seguintes liñas de código descargase a series de afiliacións medias
+á Seguridade Social: ASSM_CNAE09_Ag, ASSM_CNAE09_Cons, ASSM_CNAE09_In,
+ASSM_CNAE09_Ser e ASSM_CNAE09_Total
+
+```{r}
+library(tidyr)
+library(dplyr)
+setwd("R:/Servicios/Master/Alejandro Romero Rivas/Series temporales")
+
+url <- "http://www.ige.gal/igebdt/igeapi/csv/datosserc/ASSM_CNAE09_Ag/ASSM_CNAE09_Cons/ASSM_CNAE09_In/ASSM_CNAE09_Ser/ASSM_CNAE09_Total"
+df <- read.csv(url, encoding = 'latin1')
+head(df)
+
+```
+
+Cambiase o formato, para que as series aparezan en columnas con
+*pivot_wider*. *pivot_wider*() amplía os datos, aumentando o número de
+columnas e disminuíndo o de filas. A operación inversa é
+*pivot_longer*().
+
+```{r}
+# ss é un data frame
+ss <- pivot_wider(df, names_from="serie", values_from="dato")
+head(ss)
+
+```
+
+## Series de tempo. Obxecto time-series
+
+Para traballar con series de tempo, existe o obxecto time-series que se
+crea coa función *ts*.
+
+ts(data = NA, start = 1, end = numeric(), frequency = 1,...)
+
+data= vector ou matriz cos datos (tamén se pode empregar un dataframe
+que se transformará a unha matriz).
+
+start= tempo da primeira observación. Un só número ou un vector de dous
+números (o segundo dos cales é un número enteiro), que especifican unha
+unidade de tempo natural e un número (baseado en 1) de mostras na
+unidade de tempo.
+
+frequency= o número de observacións por unidade de tempo.
+
+```{r}
+# ss pasa a ser un obxecto time-series
+# frecuencia=12=< 12 observacións por unidade de tempo=>datos mensuais
+ss <- ts(ss[,3:7], start = c(2009,1), frequency=12)
+class(df)
+class(ss)
+
+# cambianse os nomes
+colnames(ss)
+colnames(ss) <- c("agr", "con", "ind", "ser", "tot")
+# dimensións
+dim(ss)
+# primeiras observacións
+head(ss)
+```
+
+#### Exercicio
+
+Leer as series de defuncións e nacementos
+
+```{r}
+url <- 'https://www.ige.gal/igebdt/igeapi/csv/datosserc/DEF/NAC_TOT'
+
+serie <- read.csv(url, encoding='latin1')
+serie <- pivot_wider(serie, names_from = 'serie', values_from = 'dato') %>% arrange(codtempo)
+serie
+ss <- ts(serie[,3:4], start=c(1996,1), frequency = 12)
+?pivot_wider
+ss
+
+
+```
+
+### Frecuencias e períodos
+
+A función *frequency* devolve o número de mostras por unidade de tempo
+(frecuencia)
+
+A función *deltat* devolve o intervalo de tempo entre observacións. O
+deltat é a inversa da frecuencia
+
+```{r}
+frequency(ss)
+deltat(ss) 
+
+```
+
+### Manipular series de tempo
+
+A función *aggregate* permite agregar series de tempo.
+
+aggregate(x, nfrequency=1, FUN=sum, ndeltat=1,...)
+
+x= obxecto R (ts)
+
+nfrequency= novo número de observacións por unidade de tempo; debe ser
+un divisor da frecuencia de x\
+(ndeltat= nova fracción do período de mostraxe entre observacións
+sucesivas; debe ser un divisor do intervalo de mostraxe de x) Pode
+empregarse ou a frecuencia ou o delta, son inversos
+
+FUN= unha función para calcular as estatísticas de resumo que se poden
+aplicar a todos os subconxuntos de datos.
+
+```{r}
+# a nova frecuencia pasa a ser 1 observación por unidade de tempo=> medias mensuais
+aggregate(ss, nfrequency=1, mean)
+```
+
+```{r}
+# a nova frecuencia pasa a ser 4: i.e 4 observacións por unidade de tempo=> desviación típica trimestrais
+head(aggregate(ss, nfrequency=4, sd))
+
+```
+
+Empregando unha función definida previamente ou definida na mesma liña
+de código (anónima)
+
+```{r}
+medgeo = function(x) {
+   n = length(x)
+   return(prod(x)^(1/n))
+}
+aggregate(ss, nfrequency=1, medgeo)
+
+# introducindo a función directamente
+aggregate(ss, nfrequency=1, function(x){prod(x)^(1/length(x))})
+```
+
+### Seleccionar subperíodos
+
+*window* é unha función xenérica que extrae o subconxunto do obxecto x
+observado entre os tempos de inicio e fin. Se se especifica unha
+frecuencia, a serie reamóstrase na nova frecuencia.
+
+Datos dende xaneiro de 2010 ata xuño de 2012:
+
+```{r}
+window(ss, start=c(2010,1), end=c(2012,6))
+```
+
+1 mes por ano dende 2010 ata 2012 (os xaneiros)
+
+```{r}
+window(ss, start=2010, end=2012,frequency=1)
+```
+
+Para seleccionar por columnas empréganse os corchetes con índices ou
+nomes para especificar os elementos
+
+```{r}
+head(ss[,1]) # primeira columnas
+head(ss[,"agr"]) # serie chamada "agr"
+head(ss[,c(1,2)])
+head(ss[,c("agr","con")])
+# tamen se poden empregar a seleccións por filas
+head(ss[1:5,])
+```
+
+### Operacións con series: unión e interseccións
+
+No seguinte chunk collese a serie de afiliacions de agricultura dende
+xaneiro de 2009 e decembro de 2010 e construción dende xaneiro de 2010
+ata decembro dese mesmo ano.
+
+A unión cubre con NA os períodos faltantes (fai o mesmo que o cbind
+combinar por columnas)
+
+```{r}
+agr = window(ss[,1], start=c(2009,1), end=c(2010,12))
+cons = window(ss[,2], start=c(2010,1), end=c(2010,12))
+agr
+head(ts.intersect(agr, cons)) # período comun
+head(ts.union(agr, cons))     # unión dos períodos 
+```
+
+sumas, restas e outras operacións: fanse nos períodos comúns observación
+a observación
+
+```{r}
+agr + cons
+agr - cons
+agr / cons
+
+log(agr)
+exp(log(agr))
+agr^2
+agr * 2 + 5
+rm(agr,cons)
+head(ss)
+def <- window(ss[,1], start=c(2000,1), end=c(2023,12))
+nac <- window(ss[,2], start=c(2000,1), end=c(2023,12))
+head(def)
+saldo_veg <- nac-def
+cuatris_nac <-aggregate(nac, nfrequency=4, FUN=sum)
+cuatris_def <-aggregate(def, nfrequency=4, FUN=sum)
+cuatris_nac
+```
+
+#### Exercicio
+
+-   Filtrar os datos das series de nacementos e defuncións para os anos
+    de 2000 ata 2023
+
+-   Calcular as sumas trimestrais e anuais de defuncións e nacementos.
+
+-   Obter o crecemento vexetativo=nacementos-defuncións
+
+### Agrupar por subperíodo
+
+A función *aggregate* permitía agrupar as observacións dentro da mesma
+unidade de tempo por distinta frecuencia da definida. Por exemplo, para
+cada ano (con datos mensuais frequency=12) sacar as medias mensuais
+(nova frecuencia=1) ou trimestrais (nova frecuencia=4).
+
+Se se desexa calcular as medias dos meses de xaneiro ao longo de todos
+os anos, necesitase a función *cycle*
+
+cycle = devolve as posicións no ciclo de cada observación.
+
+No seguinte chunk leese a serie de prazas ofertadas (mensual) nos
+establecementos hoteleiros.
+
+```{r}
+per <- read.csv("http://www.ige.gal/igebdt/igeapi/csv/datosserc/EOHP_04")
+head(per)
+# transformase o data frame a serie de tempo
+per <- ts(per[,4], start=c(1999, 1), frequency=12)
+# datos dende xaneiro de 1999 ata decembro de 2019
+per <- window(per, start=c(1999,1), end=c(2019,12))
+
+# ciclo de cada observación
+cycle(per)
+```
+
+O primeiro elemento (xaneiro) é o 1, febreiro é o 2... ata decembro que
+é o 12.
+
+Para facer as medias de cada mes (ao longo de todos os anos) empregase a
+función *tapply* especificando a clasificación coa función cycle.
+
+tapply (x, INDEX, FUN...) Aplica a función (FUN) a cada cela dunha
+matriz segundo os valores de INDEX. É dicir, a cada grupo (non baleiro)
+de valores de cada combinación única dos niveis de certos factores
+(INDEX) aplicalle a función
+
+```{r}
+# media para cada valor de per con cycle=1,...
+tapply(per, cycle(per), mean)
+```
+
+A media de prazas ofertadas en xaneiro (media nos diferentes anos) é
+281.286,6 prazas.
+
+Para facer as medias (ao longo dos anos) nos catro trimestres, primeiro
+agregase en cada ano as medias trimestrais e despois ao longo de todos
+os anos:
+
+```{r}
+tapply(nac,cycle(nac),mean)
+tapply(def,cycle(nac),mean)
+nac_tri <- aggregate(nac, nfrequency=4, sum)
+
+tapply(nac_tri,cycle(nac_tri),mean)
+def_tri <- aggregate(def, nfrequency=4, sum)
+
+tapply(def_tri,cycle(def_tri),mean)
+
+```
+
+#### Exercicio
+
+Facer as medias mensuais e trimestrais (ao longo dos anos) da serie de
+defuncions e nacementos
+
+## Operacións típicas de series de tempo
+
+### Desprazamentos
+
+A función *lag* calcula unha versión desfasada dunha serie temporal,
+desprazando a base temporal cara atrás nun número determinado de
+observacións.
+
+$lag(X_{t},k)=X_{t+k}$
+
+```{r}
+# collese dos anos: dende xaneiro 2018 a decembro de 2019
+perc <- window(per, start=c(2018,1), end=c(2019,12))
+# serie sen desprazar
+perc
+# serie desprazada un instante hacia atrás
+stats::lag(perc, 1)
+# serie desprazada un instante hacia adiante
+stats::lag(perc, -1)
+
+```
+
+### Diferenzas
+
+Diferenciar unha serie $X_{t}$ consiste en obter unha nova serie
+($D_{t}$ ) definida polas diferenzas:
+
+$D_{t}^{1}=D(X_{t})=X_{t}-X_{t-1}$
+
+Estas diferenzas poden obterse recursivamente e así obter segundas
+diferenzas como
+
+$D_{t}^{2}=D(D^{1}_{t})=D_{t}^{1}-D_{t-1}^{1}$
+
+En R, para diferenxias emprégase a función *diff* que devolve as
+diferenzas iteradas e retardadas axeitadamente.
+
+diff(x,lag=1,differences=1 ...)
+
+lag= retardo
+
+differences=1 un número enteiro que indica a orde da diferenza.
+
+Se x é un vector de lonxitude n e a differences = 1, entón o resultado
+calculado é igual ás diferenzas sucesivas x[(1+lag):n] - x[1:(n-lag)].
+
+```{r}
+# diferenza de primeiro orde e desfase 1
+diff(perc) 
+# mes menos mes anterior
+perc - stats::lag(perc, -1)
+```
+
+Para facer a taxa de variación mensual relativa (en tanto por cen)
+
+```{r}
+100*diff(perc)/stats::lag(perc, -1)
+```
+
+Para calcular a diferencia dun mes con respecto do mesmo mes no ano
+anterior pode aplicarse a función *diff* con lag=12
+
+```{r}
+perc
+diff(perc, 12) # diff(per, lag=12)
+perc - stats::lag(perc, -12)
+
+```
+
+### NAs
+
+a función na.omit aplicada a unha serie de tempo elimina as observacións
+con NA
+
+```{r}
+agr = window(ss[,1], start=c(2009,1), end=c(2010,12))
+cons = window(ss[,2], start=c(2010,1), end=c(2010,12))
+ts_na = ts.union(agr, cons)
+na.omit(ts_na)
+rm(agr, cons)
+```
+
+## Gráficos de series de tempo
+
+A función *plot* realiza unha gráfica da serie (por defecto de liñas
+cando só se representa unha serie por gráfica). Os valores faltantes non
+se representan
+
+```{r}
+plot(ss)
+
+plot(ts_na)
+rm(ts_na)
+
+```
+
+Para representar unha única serie (do obxecto ts) selecciónase
+empregando os corchetes (xa visto). Ao *plot* se lle pode engadir
+títulos nos eixes, título principal, etc.
+
+```{r}
+plot(ss[,"agr"], xlab="ano", ylab="afiliacións", main="afiliacións en agricultura")
+
+```
+
+Varias series no mesmo gráfico, empregase ablines
+
+```{r}
+# vemos onde se moven as series
+aggregate(ss,nfrequency = 1,max)
+aggregate(ss,nfrequency = 1,min)
+
+# poñemos valores minimos e máximos no eixe das y
+plot(ss[,"con"],col='blue',ylab='afiliacions',ylim = c(60000, 170000))
+lines(ss[,"ind"],col='red')
+legend("bottomleft",legend=c("construcion","industria"),col=c("blue","red"),lty=1)
+```
+
+#### Gráfico de transformacións
+
+Podería ser interesente representar a serie tranformada por logaritmos
+ou a mesma serie desprazada
+
+```{r}
+# logaritmo das afiliacións
+plot(log(ss))
+# diferenzas 
+plot(diff(ss, 1))
+```
+
+Tamén se pode representar gráficos de dispersión da serie coa mesma
+serie retardada para ver se existe unha relación lineal:
+
+```{r}
+plot(ss[,"agr"],lag(ss[,"agr"], 1),xlab='SS agricultura',ylab='SS agricultura+1')
+
+```
+
+#### Boxplot
+
+Nos boxplot (gráficos de bigotes) visualízase a distribución dos datos
+(variables continuas) mostrando o seu centro (mediana) e a dispersión
+(RIC) (rango intercuartílico Q3-Q1).
+
+En series temporais poden empregarse para ver como se distribúen os
+datos nos diferentes instantes temporais. A seguinte gráfica representa
+as afiliacións en alta nos diferentes meses:
+
+```{r}
+boxplot(per~cycle(per))
+?plot
+plot(tapply(nac,cycle(nac),mean),type='l')
+plot(tapply(def,cycle(def),mean),type='l')
+nac_tri <- aggregate(nac, nfrequency=4, sum)
+
+plot(tapply(nac_tri,cycle(nac_tri),mean),type='l')
+def_tri <- aggregate(def, nfrequency=4, sum)
+
+plot(tapply(def_tri,cycle(def_tri),mean),type='l')
+
+
+```
+
+```{r}
+boxplot(nac~cycle(nac))
+boxplot(nac_tri~cycle(nac_tri))
+boxplot(def~cycle(def))
+boxplot(def_tri~cycle(def_tri))
+```
+
+#### Exercicio
+
+Representar gráficamente:
+
+-   Serie mensual de nacementos e defuncións
+
+-   Serie trimestral de nacementos e defuncions
+
+-   Bosplot de medias mensuais e trimestrais (ao longo dos anos) de
+    nacementos e defuncions.
+
+## Autocorrelacións e correlacións cruzadas
+
+A autocorrelación é unha medida estatística que examina a relación entre
+os valores dunha serie temporal en diferentes puntos do tempo. Mide como
+o valor nun instante determinado se correlaciona cos seus valores
+pasados ou futuros.
+
+En R, emprégase a función *acf* para as autocorrelacións e a *ccf* para
+as correlacións cruzadas.
+
+-   A función *acf* calcula (e, por defecto, representa graficamente)
+    estimacións da función de autocovarianza ou autocorrelación.
+
+acf(x, lag.max = NULL, type = c("correlation", "covariance", "partial"),
+plot = TRUE, na.action = na.fail, demean = TRUE, ...)
+
+x= datos númericos
+
+lag.max= retardo máximo para o cal calcular as correlacións
+
+type= tipo de valores calculados: correlación, covarianza ou correlación
+parcial. Por defecto calcula a correlación.
+
+Esta función devolve un obxeto acf. The lag 0 autocorrelation is fixed
+at 1 by convention.
+
+-   A función *ccf* calcula a correlación cruzada ou covarianza entre
+    dúas series univariantes
+
+ccf(x, y, lag.max = NULL, type = c("correlation", "covariance"), plot =
+TRUE, na.action = na.fail, ...)
+
+```{r}
+acf_per<-acf(per)
+head(acf_per$lag)
+head(acf_per$acf)
+
+
+```
+
+### Exercicio: IPI indicador adiantado do PIB
+
+-   Leer da web do IGE os datos do producto interior bruto a prezos
+    correntes. Datos brutos: prezos correntes e índices de volume.
+    Revisión Estatística 24
+
+-   Leer o índice de producción industrial.Base 2021. Índice xeral
+    (datos mensuais). Calcular a media trimestral
+
+-   Período común (filtrar algunha se é necesario)
+
+-   Calcular as correlacións entre as series indices de volume e IPI
+
+-   Representar graficamente
+
+```{r}
+pib<- read.csv('https://www.ige.gal/igebdt/igeapi/csv/datosserc/EXPRE24CONBR')
+ipi <- read.csv('https://www.ige.gal/igebdt/igeapi/csv/datosserc/IPI21XE', encoding = 'latin1')
+pib
+View(pib)
+pib <- pib %>% filter(codtempo>200200)
+pib <- ts(pib[,4], start = c(2002,1),end=c(2025,1), frequency = 4)
+?ts
+ipi <-ts(ipi[,4], start = c(2002,1),frequency = 12)
+ipi
+pib
+ipi_tri<-aggregate(ipi, nfrequency=4,mean)
+pib_tri<-aggregate(pib, nfrequency=4,mean)
+ipi_tri
+pib_tri
+cor(ipi_tri,pib_tri)
+ccf(ipi_tri,pib_tri)
+plot(pib_tri)
+plot(ipi_tri)
+plot(pib)
+plot(ipi)
+?aggregate()
+```
